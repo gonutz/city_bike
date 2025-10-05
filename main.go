@@ -40,6 +40,7 @@ type game struct {
 	nextCarFrameIn  int
 	arrowHintTimer  int
 	nextKeyLeft     bool
+	miles           float64
 }
 
 type gameState int
@@ -160,7 +161,7 @@ func (g *game) run() {
 	visibleBottom := max(0, round(g.camDy-0.51))
 	visibleHeight := round(float64(g.windowH)/g.scale+0.51) + 1
 	visibleTop := visibleBottom + visibleHeight - 1
-	_ = visibleTop // TODO
+	_ = visibleTop
 
 	streetW, streetH := g.size("street")
 	fenceW, fenceH := g.size("fence")
@@ -168,6 +169,7 @@ func (g *game) run() {
 	bikeW, _ := g.size("bike_0")
 	carW, _ := g.size("car_0")
 	keysW, _ := g.size("press_left")
+	milesW, _ := g.size("miles")
 	frontYardH := fenceH + 1
 	lampDx := streetW + 30
 
@@ -388,6 +390,24 @@ func (g *game) run() {
 
 			g.draw(arrowImage, g.bikeX+float64(bikeW-keysW)/2, 70, tint)
 		}
+
+		g.miles += g.bikeSpeed * 0.0001
+
+		letterW := round(5 * g.scale)
+		text := fmt.Sprintf("%.3f", g.miles)
+		textW := len(text)*letterW + round(g.scale*float64(milesW))
+		textY := round(5 * g.scale)
+		textX := (g.windowW - textW) / 2
+		for _, r := range text {
+			if r == '.' {
+				check(g.window.DrawImage("dot.png", draw.At(textX, textY), draw.Scale(g.scale)))
+			} else {
+				check(g.window.DrawImage(string(r)+".png", draw.At(textX, textY), draw.Scale(g.scale)))
+			}
+			textX += letterW
+		}
+		textX += letterW
+		check(g.window.DrawImage("miles.png", draw.At(textX, textY), draw.Scale(g.scale)))
 	}
 
 	bottomLampX := visibleLeft/lampDx*lampDx + lampOffsetX
