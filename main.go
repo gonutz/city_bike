@@ -18,29 +18,32 @@ var fileSystem embed.FS
 var frontYardColor = rgb(38, 38, 38)
 
 type game struct {
-	window          draw.Window
-	windowW         int
-	windowH         int
-	state           gameState
-	scale           float64
-	camDx           float64
-	camDy           float64
-	fade            float32
-	camSpeedY       float64
-	zoomTimer       int
-	bikeSpeed       float64
-	bikeX           float64
-	bikeY           float64
-	bikeFrame       int
-	nextBikeFrameIn int
-	carSpeed        float64
-	carX            float64
-	carY            float64
-	carFrame        int
-	nextCarFrameIn  int
-	arrowHintTimer  int
-	nextKeyLeft     bool
-	miles           float64
+	window           draw.Window
+	windowW          int
+	windowH          int
+	state            gameState
+	scale            float64
+	camDx            float64
+	camDy            float64
+	fade             float32
+	camSpeedY        float64
+	zoomTimer        int
+	bikeSpeed        float64
+	bikeX            float64
+	bikeY            float64
+	bikeFrame        int
+	nextBikeFrameIn  int
+	carSpeed         float64
+	carX             float64
+	carY             float64
+	carFrame         int
+	nextCarFrameIn   int
+	arrowHintTimer   int
+	nextKeyLeft      bool
+	miles            float64
+	dead             bool
+	nextDeathFrameIn int
+	deathFrame       int
 }
 
 type gameState int
@@ -372,7 +375,20 @@ func (g *game) run() {
 			g.nextCarFrameIn = 4
 		}
 
-		g.draw(fmt.Sprintf("bike_%d", g.bikeFrame), g.bikeX, g.bikeY)
+		if g.dead {
+			g.nextDeathFrameIn--
+			if g.nextDeathFrameIn <= 0 {
+				g.nextDeathFrameIn = 3
+				g.deathFrame++
+			}
+			if g.deathFrame <= 11 {
+				g.draw(fmt.Sprintf("death_%d", g.deathFrame), g.carX+43, g.carY)
+			} else {
+				g.carSpeed *= 1.01
+			}
+		} else {
+			g.draw(fmt.Sprintf("bike_%d", g.bikeFrame), g.bikeX, g.bikeY)
+		}
 		g.draw(fmt.Sprintf("car_%d", g.carFrame), g.carX, g.carY)
 
 		g.arrowHintTimer = max(0, g.arrowHintTimer-1)
@@ -391,7 +407,9 @@ func (g *game) run() {
 			g.draw(arrowImage, g.bikeX+float64(bikeW-keysW)/2, 70, tint)
 		}
 
-		g.miles += g.bikeSpeed * 0.0001
+		if !g.dead {
+			g.miles += g.bikeSpeed * 0.0001
+		}
 
 		letterW := round(5 * g.scale)
 		text := fmt.Sprintf("%.3f", g.miles)
@@ -408,6 +426,11 @@ func (g *game) run() {
 		}
 		textX += letterW
 		check(g.window.DrawImage("miles.png", draw.At(textX, textY), draw.Scale(g.scale)))
+
+		if !g.dead && g.bikeX < g.carX+float64(carW) {
+			g.dead = true
+			g.deathFrame = -1
+		}
 	}
 
 	bottomLampX := visibleLeft/lampDx*lampDx + lampOffsetX
