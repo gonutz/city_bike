@@ -8,8 +8,8 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/gonutz/prototype/draw"
 	"github.com/gonutz/ease"
+	"github.com/gonutz/prototype/draw"
 )
 
 //go:embed rsc
@@ -18,16 +18,28 @@ var fileSystem embed.FS
 var frontYardColor = rgb(38, 38, 38)
 
 type game struct {
-	window     draw.Window
-	windowW    int
-	windowH    int
-	state      gameState
-	scale      float64
-	camDx      float64
-	camDy      float64
-	fade       float32
-	camSpeedY  float64
-	zoomTimer int
+	window          draw.Window
+	windowW         int
+	windowH         int
+	state           gameState
+	scale           float64
+	camDx           float64
+	camDy           float64
+	fade            float32
+	camSpeedY       float64
+	zoomTimer       int
+	bikeSpeed       float64
+	bikeX           float64
+	bikeY           float64
+	bikeFrame       int
+	nextBikeFrameIn int
+	carSpeed        float64
+	carX            float64
+	carY            float64
+	carFrame        int
+	nextCarFrameIn  int
+	arrowHintTimer  int
+	nextKeyLeft     bool
 }
 
 type gameState int
@@ -39,6 +51,9 @@ const (
 	fadingInGame
 	ascendingIntoGame
 	zoomingIntoGame
+	bikeComingIn
+	carComingIn
+	playing
 )
 
 func (g *game) update(window draw.Window) {
@@ -135,21 +150,6 @@ func (g *game) menu() {
 }
 
 func (g *game) run() {
-	g.scale = max(1, g.scale+g.window.MouseWheelY()*0.23847) // TODO
-
-	if g.window.IsKeyDown(draw.KeyLeft) || g.window.IsKeyDown(draw.KeyH) || g.window.IsKeyDown(draw.KeyA) {
-		g.camDx += 2
-	}
-	if g.window.IsKeyDown(draw.KeyRight) || g.window.IsKeyDown(draw.KeyL) || g.window.IsKeyDown(draw.KeyD) {
-		g.camDx -= 2
-	}
-	if g.window.IsKeyDown(draw.KeyUp) || g.window.IsKeyDown(draw.KeyK) || g.window.IsKeyDown(draw.KeyW) {
-		g.camDy += 1
-	}
-	if g.window.IsKeyDown(draw.KeyDown) || g.window.IsKeyDown(draw.KeyJ) || g.window.IsKeyDown(draw.KeyS) {
-		g.camDy -= 1
-	}
-
 	g.camDx = min(0, g.camDx)
 	g.camDy = max(0, g.camDy)
 
@@ -165,6 +165,9 @@ func (g *game) run() {
 	streetW, streetH := g.size("street")
 	fenceW, fenceH := g.size("fence")
 	skyscraperW, _ := g.size("skyscraper_0")
+	bikeW, _ := g.size("bike_0")
+	carW, _ := g.size("car_0")
+	keysW, _ := g.size("press_left")
 	frontYardH := fenceH + 1
 	lampDx := streetW + 30
 
@@ -278,6 +281,115 @@ func (g *game) run() {
 		topLampX += lampDx
 	}
 
+	if g.state == bikeComingIn {
+		g.bikeX += g.bikeSpeed
+		g.nextBikeFrameIn--
+		if g.nextBikeFrameIn <= 0 {
+			g.bikeFrame = (g.bikeFrame + 1) % 4
+			g.nextBikeFrameIn = round(4 / g.bikeSpeed)
+		}
+
+		back := ""
+		x := round(g.bikeX) + bikeW/2
+		cx := visibleLeft + visibleWidth/2
+		if cx-20 <= x && x <= cx+20 {
+			back = "_back"
+		}
+
+		if x > cx+20 {
+			g.bikeSpeed = min(1, g.bikeSpeed+0.007)
+		}
+
+		if x > visibleRight {
+			g.state = carComingIn
+			g.carX = float64(visibleLeft - 2*carW)
+			g.carY = 21
+		}
+
+		g.draw(fmt.Sprintf("bike%s_%d", back, g.bikeFrame), g.bikeX, g.bikeY)
+	}
+
+	if g.state == carComingIn {
+		g.carX += 1.5
+		g.nextCarFrameIn--
+		if g.nextCarFrameIn <= 0 {
+			g.carFrame = (g.carFrame + 1) % 8
+			g.nextCarFrameIn = 4
+		}
+		g.draw(fmt.Sprintf("car_%d", g.carFrame), g.carX, g.carY)
+
+		if round(g.carX) > visibleRight+carW {
+			g.state = playing
+			g.bikeX = float64(visibleRight + 140)
+			g.bikeSpeed = 0.9
+			g.carX = float64(visibleRight + 10)
+			g.arrowHintTimer = 600
+			g.carSpeed = 0.75
+		}
+	}
+
+	if g.state == playing {
+		g.bikeSpeed *= 0.9975
+
+		left := g.window.WasKeyPressed(draw.KeyLeft) || g.window.WasKeyPressed(draw.KeyA)
+		right := g.window.WasKeyPressed(draw.KeyRight) || g.window.WasKeyPressed(draw.KeyD)
+
+		if g.nextKeyLeft && left || !g.nextKeyLeft && right {
+			g.bikeSpeed /= 0.96
+			g.nextKeyLeft = !g.nextKeyLeft
+		} else if g.nextKeyLeft && right || !g.nextKeyLeft && left {
+			// Punish the wrong key.
+			g.bikeSpeed *= 0.9975
+		}
+
+		g.bikeSpeed = min(1.75, max(0.1, g.bikeSpeed))
+
+		if g.carSpeed < g.bikeSpeed {
+			g.carSpeed = 0.9*g.carSpeed + 0.1*g.bikeSpeed
+		} else {
+			g.carSpeed = 0.995*g.carSpeed + 0.005*g.bikeSpeed
+		}
+
+		g.carSpeed = max(1, g.carSpeed)
+
+		g.bikeX += g.bikeSpeed
+		g.carX += g.carSpeed
+
+		destCamDx := -(g.bikeX - float64(bikeW)/2 - float64(visibleWidth)/2)
+		g.camDx = 0.95*g.camDx + 0.05*destCamDx
+
+		g.nextBikeFrameIn--
+		if g.nextBikeFrameIn <= 0 {
+			g.bikeFrame = (g.bikeFrame + 1) % 4
+			g.nextBikeFrameIn = round(4 / g.bikeSpeed)
+		}
+
+		g.nextCarFrameIn--
+		if g.nextCarFrameIn <= 0 {
+			g.carFrame = (g.carFrame + 1) % 8
+			g.nextCarFrameIn = 4
+		}
+
+		g.draw(fmt.Sprintf("bike_%d", g.bikeFrame), g.bikeX, g.bikeY)
+		g.draw(fmt.Sprintf("car_%d", g.carFrame), g.carX, g.carY)
+
+		g.arrowHintTimer = max(0, g.arrowHintTimer-1)
+		if g.arrowHintTimer > 0 {
+			arrowImage := "press_left"
+			if g.arrowHintTimer/15%2 == 0 {
+				arrowImage = "press_right"
+			}
+
+			tint := draw.Tint(draw.White)
+			if g.arrowHintTimer < 100 {
+				a := float32(g.arrowHintTimer) / 100
+				tint = draw.Tint(draw.RGBA(1, 1, 1, a))
+			}
+
+			g.draw(arrowImage, g.bikeX+float64(bikeW-keysW)/2, 70, tint)
+		}
+	}
+
 	bottomLampX := visibleLeft/lampDx*lampDx + lampOffsetX
 	for bottomLampX < visibleRight {
 		g.draw("lamp_bottom", bottomLampX+16, 7)
@@ -310,7 +422,15 @@ func (g *game) run() {
 		before := float64(g.windowW) / g.scale
 
 		g.zoomTimer++
-		g.scale = 3 + ease.InOutQuad(float64(g.zoomTimer)*0.01)*10
+		t := float64(g.zoomTimer) * 0.005
+		g.scale = 3 + ease.InOutQuad(t)*7
+		if t >= 1 {
+			g.scale = 10
+			g.bikeX = float64(visibleLeft - 3*bikeW)
+			g.bikeY = 24
+			g.bikeSpeed = 0.5
+			g.state = bikeComingIn
+		}
 
 		after := float64(g.windowW) / g.scale
 
