@@ -101,6 +101,7 @@ func (g *game) init() {
 	if g.state == fadingInMenu {
 		g.window.SetFullscreen(true)
 		g.window.ShowCursor(false)
+		g.window.SetIcon("icon.png")
 		g.fade = 1.1
 	}
 }
